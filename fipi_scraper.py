@@ -8,17 +8,6 @@ import time
 
 from os import mkdir
 
-"""
-to do:
-1. Более точный выбор содержимого для снимка +
-2. Переключение страниц +
-3. Сортировка по папкам на основе темы +
-4(?). Переключение предмета
-5(?). Переключение тем
-6. Имя файла - id вопроса +
-When I try to use selenium find_element method in a loop, I get NoSuchElementException exception. What could be the problem and how to fix it?
-"""
-
 def create_web_page() -> webdriver:
     
     '''Открывает страницу фипи. Возвращает webdriver Firefox.'''
