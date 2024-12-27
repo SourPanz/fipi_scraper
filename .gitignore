@@ -1,0 +1,8 @@
+# Ignore virtual env
+venv/
+
+# Ignore geckodriver
+geckodriver.exe
+
+# Ignore output
+screenshots/
