@@ -2,24 +2,38 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import ElementNotInteractableException, StaleElementReferenceException, TimeoutException
 
 import time
 
 from os import mkdir
 
-def create_web_page() -> webdriver:
+def open_web_page() -> webdriver:
     
     '''Открывает страницу фипи. Возвращает webdriver Firefox.'''
     
     driver = webdriver.Firefox()
+    driver.maximize_window()
     # физика огэ
-    # driver.get('https://oge.fipi.ru/bank/index.php?proj=B24AFED7DE6AB5BC461219556CCA4F9B')
+    driver.get('https://oge.fipi.ru/bank/index.php?proj=B24AFED7DE6AB5BC461219556CCA4F9B')
     # математика егэ
-    driver.get('https://ege.fipi.ru/bank/index.php?proj=AC437B34557F88EA4115D2F374B0A07B')
-    driver.implicitly_wait(1)
+    # driver.get('https://ege.fipi.ru/bank/index.php?proj=AC437B34557F88EA4115D2F374B0A07B')
     
     return driver
+
+def wait_for_element(driver, locator) -> bool:
+    try:
+        element = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located(locator))
+        print('Element found and visible')
+        
+        return True
+    
+    except TimeoutException:
+        print(f"Element with locator {locator} not visible within the timeout period.")
+        
+        return False
+        
 
 def get_themes(driver: webdriver) -> list:
     
@@ -35,43 +49,62 @@ def get_themes(driver: webdriver) -> list:
 def select_page(driver: webdriver, page: int):
     
     '''Переходит на введенную страницу.'''
-    
-    page_xpath = f'//ul[@class="pager"]/child::li[@p="{str(page)}"]'
+    print('Page number:', page)
+    page_xpath = f'//div[@class="pager-panel"]/ul/li[@p="{page}"]'
+    locator = (By.XPATH, page_xpath)
     
     try:
-        driver = WebDriverWait(driver, 5).until(
-            EC.visibility_of_element_located((By.XPATH, page_xpath))
-        )
-        print('Element found and visible')
-    except TimeoutException:
-        print('Element not found within the timeout period.')
-    else:
-        button = driver.find_element(By.XPATH, page_xpath)
-        # if len(button) > 0:
-        button.click()
+        WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located(locator)).click()
+    except StaleElementReferenceException:
+        print(f'Page {page} is stale, trying again')
+        WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located(locator)).click()
+    except ElementNotInteractableException:
+        print('Already first page')
+    
+    
+    # if wait_for_element(driver, locator):
+    
+    #     button = driver.find_element(*locator)
+    #     button.click()
+    
     
         
     
-def get_questions(driver: webdriver) -> list:
+def get_questions(driver: webdriver, directory: str) -> None:
     
     '''Собирает блоки с вопросами в список. Возвращает список вебэлементов вопросов на текущей странице.'''
+    locator = (By.CSS_SELECTOR, '#questions_container')
+    if wait_for_element(driver, locator):
+        iframe = driver.find_element(*locator)
+        driver.switch_to.frame(iframe)
+        xpath = '//div[starts-with(@id,"q") and @class = "qblock" or @class = "qblock hide-form"]'
+        locator = (By.XPATH, xpath)
+        WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located(locator))
+        questions = driver.find_elements(*locator)
+        
+        create_screenshot(questions, directory)
+        
+        driver.switch_to.default_content()
+        # return questions
     
-    iframe = driver.find_element(By.CSS_SELECTOR, '#questions_container')
-    driver.switch_to.frame(iframe)
-    xpath = '//div[starts-with(@id,"q") and @class = "qblock" or @class = "qblock hide-form"]'
-    questions = driver.find_elements(By.XPATH, xpath)
-    
-    return questions
+    return []
 
 def create_screenshot(questions, directory):
     
     '''Делает скриншоты каждого блока с вопросом отдельным файлом.'''
     
     for q in questions:
-        q_id = q.get_attribute('id')
-        file_name = directory + f'/{q_id}.png'
-        q.screenshot(file_name)
-
+        try:
+            q_id = q.get_attribute('id')
+            file_name = directory + f'/{q_id}.png'
+            q.screenshot(file_name)
+        except StaleElementReferenceException:
+            print(f"Element is stale, skipping screenshot for {q_id}")
+        except Exception as e:
+            print(f"Error taking screenshot: {e}")
 
 
 def select_theme(driver: webdriver, theme):
@@ -86,53 +119,59 @@ def select_theme(driver: webdriver, theme):
     reset_button.click()
     theme.click()
     find_button.click()
+
+def check_active_theme(theme) -> bool:
+    check_box = theme.find_element(By.TAG_NAME, 'input')
+    title = check_box.get_attribute('title')
     
+    if title == 'Нет заданий по данной теме':
+            print(title + 'отсутствует')
+            return True
+    
+    return False
+        
     
         
 if __name__ == '__main__':
-    driver = create_web_page()
+    driver = open_web_page()
     themes = get_themes(driver)
-    page_xpath = f'//ul[@class="pager"]/child::li[@p="{str(2)}"]'
-    driver.find_element(By.XPATH, page_xpath).click()
 
     for theme in themes:
-    
-        if theme.get_attribute('title') == 'Нет заданий по данной теме':
-            print(theme.get_attribute('title') + 'отсутствует')
+        
+        if check_active_theme(theme):
             continue
+        
         theme_name = theme.get_attribute("textContent")
         directory = f'D:/Py_projects/fipi_scraper/screenshots/{theme_name}'
-        pages_amount = int(
-            driver.find_element(By.XPATH, '//ul[@class="pager"]/descendant::*[last()]').get_attribute('p')
-            )
-        print(f'''
-              Pages: {pages_amount}
-              ''')
-        
-        select_theme(driver, theme)
         try:
             mkdir(directory)
         except FileExistsError:
             print(theme_name + ' уже существует')
             
         
-        for i in range(2, pages_amount+1):
-            
-            questions = get_questions(driver)
+        select_theme(driver, theme)
+        
+        locator = (By.XPATH, '//ul[@class="pager"]/descendant::*[last()]')
+        WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located(locator))
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(locator))
+        pages_amount = int(
+            driver.find_element(*locator).get_attribute('p')
+            )
+        print(f'''
+              Pages: {pages_amount}
+              ''')    
+        
+        for i in range(1, pages_amount+1):
             time.sleep(1)
-            create_screenshot(questions, directory)
+            if i > pages_amount:
+                break
             select_page(driver, i)
-    
-    # pages_amount = int(
-    #         driver.find_element(By.XPATH, '//ul[@class="pager"]/descendant::*[last()]').get_attribute('p')
-    #         )
-    # print(f'''
-    #       Pages: {pages_amount}
-    #       ''')
-    # print(str(themes[1]))
-    # select_theme(driver, themes[1])
-    # select_page(driver, 2)
+            questions = get_questions(driver, directory)
+            driver.execute_script("window.scrollTo(0, 0);")
             
+    
     print('OK')
         
     
